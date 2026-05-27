@@ -8,6 +8,10 @@ Fixes:
 Run: streamlit run app.py
 """
 
+# Cloud deployment: regenerate artifacts if missing
+from streamlit_setup import setup_if_needed
+setup_if_needed()
+
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -24,12 +28,6 @@ ART = Path("artifacts")
 
 @st.cache_resource
 def load_artifacts():
-    required_files = ["preprocessor.pkl", "logistic_regression.pkl", "xgboost.pkl", "cox_model.pkl", "metrics.json"]
-    if not all((ART / f).exists() for f in required_files):
-        with st.spinner("Generating model artifacts... This may take a minute."):
-            import streamlit_setup
-            streamlit_setup.run_pipeline()
-            
     preprocessor  = joblib.load(ART / "preprocessor.pkl")
     lr_model      = joblib.load(ART / "logistic_regression.pkl")
     xgb_model     = joblib.load(ART / "xgboost.pkl")
@@ -173,8 +171,8 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("Logistic Regression", f"{lr_prob:.1%}", risk_label(lr_prob))
 col2.metric("XGBoost",             f"{xgb_prob:.1%}", risk_label(xgb_prob))
 col3.metric("Ensemble Score",      f"{ensemble:.1%}", risk_label(ensemble))
-surv_label = f"~{int(median_surv)} mo" if not np.isnan(median_surv) else "N/A"
-col4.metric("Cox 5-Yr Survival",   f"{surv_5yr:.1%}", f"Median survival: {surv_label}")
+surv_label = f"Median: ~{int(median_surv)}mo" if not np.isnan(median_surv) else "Median: N/A"
+col4.metric("Cox 5-Yr Survival", f"{surv_5yr:.1%}", surv_label)
 
 st.markdown("---")
 
@@ -186,17 +184,20 @@ avg_row = {c: 0 for c in cox_cols}
 avg_row.update({"age": 62, "poverty_pct": 14.0, "median_income": 58000, "cci_score": 1})
 sf_avg = cph.predict_survival_function(pd.DataFrame([avg_row])[cox_cols])
 
-# Bootstrap bands (±1 SE approximation via partial hazard perturbation)
-ph_val = float(cph.predict_partial_hazard(cox_df).values[0])
-sf_upper_vals = sf_patient.values.flatten() ** (ph_val * 0.88)
-sf_lower_vals = sf_patient.values.flatten() ** (ph_val * 1.12)
-sf_upper_vals = np.clip(sf_upper_vals, 0, 1)
-sf_lower_vals = np.clip(sf_lower_vals, 0, 1)
+# Uncertainty band: ±10% additive on the cumulative hazard scale
+# H(t) = -log(S(t));  upper S = exp(-(H * 0.90)), lower S = exp(-(H * 1.10))
+sf_vals = sf_patient.values.flatten()
+cum_haz  = -np.log(np.clip(sf_vals, 1e-6, 1.0))
+sf_upper_vals = np.clip(np.exp(-cum_haz * 0.90), 0, 1)  # optimistic
+sf_lower_vals = np.clip(np.exp(-cum_haz * 1.10), 0, 1)  # pessimistic
+
+curve_color = "#c0392b" if surv_5yr < 0.40 else ("#e67e22" if surv_5yr < 0.65 else "#27ae60")
 
 fig_sf, ax = plt.subplots(figsize=(9, 5))
 t = sf_patient.index
-ax.plot(t, sf_patient.values.flatten(), 'r-', lw=2.5, label="This patient")
-ax.fill_between(t, sf_lower_vals, sf_upper_vals, alpha=0.18, color='red', label="Uncertainty band")
+ax.plot(t, sf_vals, '-', color=curve_color, lw=2.5, label="This patient")
+ax.fill_between(t, sf_lower_vals, sf_upper_vals, alpha=0.18,
+                color=curve_color, label="Uncertainty band (±10% cumulative hazard)")
 ax.plot(sf_avg.index, sf_avg.values.flatten(), 'b--', lw=2, label="Population average")
 ax.axvline(60, color='gray', lw=1, ls=':', label="5-year mark")
 ax.axhline(0.50, color='gray', lw=0.8, ls=':')
