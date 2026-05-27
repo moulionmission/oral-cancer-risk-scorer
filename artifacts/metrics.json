@@ -1,0 +1,8 @@
+{
+  "lr_auc": 0.604,
+  "lr_ap": 0.8459,
+  "xgb_auc": 0.5839,
+  "xgb_ap": 0.8279,
+  "cox_train_cindex": 0.57,
+  "cox_test_cindex": 0.571
+}
