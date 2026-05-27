@@ -507,7 +507,7 @@ md("""---
 
 # ── Assemble and write ─────────────────────────────────────────────────────────
 nb.cells = cells
-Path("/home/claude/oral_cancer").mkdir(exist_ok=True)
-with open("/home/claude/oral_cancer/oral_cancer_risk_scorer.ipynb", "w") as f:
+Path(".").mkdir(exist_ok=True)
+with open("oral_cancer_risk_scorer.ipynb", "w") as f:
     nbf.write(nb, f)
 print("Notebook written.")

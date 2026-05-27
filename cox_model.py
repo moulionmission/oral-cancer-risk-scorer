@@ -18,8 +18,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ART = Path("/home/claude/oral_cancer/artifacts")
-FIG = Path("/home/claude/oral_cancer/figures")
+ART = Path("artifacts")
+FIG = Path("figures")
 
 # ── Load ──────────────────────────────────────────────────────────────────────
 X_train_raw    = pd.read_csv(ART / "X_train_raw.csv")

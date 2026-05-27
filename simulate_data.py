@@ -293,8 +293,8 @@ df.loc[pov_miss, "poverty_pct"] = np.nan
 # ═══════════════════════════════════════════════════════════════════════════════
 # Save
 # ═══════════════════════════════════════════════════════════════════════════════
-Path("/home/claude/oral_cancer/data").mkdir(parents=True, exist_ok=True)
-df.to_csv("/home/claude/oral_cancer/data/seer_oral_cancer_simulated.csv", index=False)
+Path("data").mkdir(parents=True, exist_ok=True)
+df.to_csv("data/seer_oral_cancer_simulated.csv", index=False)
 
 print(f"Dataset saved  ·  {df.shape[0]:,} rows  ×  {df.shape[1]} columns")
 print(f"Mortality rate : {df['mortality_5yr'].mean():.3f}")

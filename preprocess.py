@@ -15,8 +15,8 @@ from sklearn.preprocessing import OrdinalEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
 
 SEED = 42
-DATA_PATH = "/home/claude/oral_cancer/data/seer_oral_cancer_simulated.csv"
-OUT_DIR = Path("/home/claude/oral_cancer/artifacts")
+DATA_PATH = "data/seer_oral_cancer_simulated.csv"
+OUT_DIR = Path("artifacts")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Load ──────────────────────────────────────────────────────────────────────

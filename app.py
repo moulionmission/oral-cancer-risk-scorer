@@ -24,6 +24,12 @@ ART = Path("artifacts")
 
 @st.cache_resource
 def load_artifacts():
+    required_files = ["preprocessor.pkl", "logistic_regression.pkl", "xgboost.pkl", "cox_model.pkl", "metrics.json"]
+    if not all((ART / f).exists() for f in required_files):
+        with st.spinner("Generating model artifacts... This may take a minute."):
+            import streamlit_setup
+            streamlit_setup.run_pipeline()
+            
     preprocessor  = joblib.load(ART / "preprocessor.pkl")
     lr_model      = joblib.load(ART / "logistic_regression.pkl")
     xgb_model     = joblib.load(ART / "xgboost.pkl")

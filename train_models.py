@@ -20,8 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 SEED = 42
-ART = Path("/home/claude/oral_cancer/artifacts")
-FIG = Path("/home/claude/oral_cancer/figures"); FIG.mkdir(exist_ok=True)
+ART = Path("artifacts")
+FIG = Path("figures"); FIG.mkdir(exist_ok=True)
 
 # ── Load preprocessed data ────────────────────────────────────────────────────
 X_train = np.load(ART / "X_train.npy")
