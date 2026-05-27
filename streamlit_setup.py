@@ -1,20 +1,17 @@
 import subprocess
 from pathlib import Path
+import sys
 
 def run_pipeline():
     print("Starting pipeline to generate artifacts...")
     
-    # Create folders if they do not exist
     Path("data").mkdir(exist_ok=True)
     Path("artifacts").mkdir(exist_ok=True)
     Path("figures").mkdir(exist_ok=True)
     
-    # Run the scripts sequentially
     scripts = ["simulate_data.py", "preprocess.py", "train_models.py", "cox_model.py"]
     for script in scripts:
         print(f"Running {script}...")
-        # Running with the current python interpreter and forcing UTF-8 mode to handle unicode characters
-        import sys
         result = subprocess.run([sys.executable, "-X", "utf8", script], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"Error running {script}:")
@@ -24,6 +21,18 @@ def run_pipeline():
             print(result.stdout)
             
     print("Pipeline completed successfully! All artifacts generated.")
+
+def setup_if_needed():
+    artifacts_needed = [
+        "artifacts/preprocessor.pkl",
+        "artifacts/logistic_regression.pkl",
+        "artifacts/xgboost.pkl",
+        "artifacts/cox_model.pkl",
+        "artifacts/metrics.json",
+    ]
+    if all(Path(p).exists() for p in artifacts_needed):
+        return
+    run_pipeline()
 
 if __name__ == "__main__":
     run_pipeline()
