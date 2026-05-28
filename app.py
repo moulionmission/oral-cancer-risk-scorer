@@ -3,6 +3,10 @@ app.py — AI-Powered Oral Cancer Risk Scorer + DeepSurv
 Upgraded pipeline: LR + XGBoost + Cox PH + DeepSurv neural network
 """
 
+# Cloud deployment: redirect pycox dataset writes to writable /tmp folder
+import os
+os.environ['PYCOX_DATA_DIR'] = '/tmp/pycox_data'
+
 # Cloud deployment: regenerate artifacts if missing
 from streamlit_setup import setup_if_needed
 setup_if_needed()
