@@ -435,7 +435,7 @@ with tab4:
         "Notes":        ["L2, class-weighted","scale_pos_weight",
                          "Ridge penalised","Neural net, bootstrap CI"],
     }
-    st.dataframe(pd.DataFrame(perf_data), hide_index=True, use_column_width=True)
+    st.dataframe(pd.DataFrame(perf_data), hide_index=True, use_container_width=True)
 
     st.markdown("---")
     col_r1, col_r2 = st.columns(2)
