@@ -1,8 +1,16 @@
 {
   "lr_auc": 0.604,
   "lr_ap": 0.8459,
-  "xgb_auc": 0.5833,
-  "xgb_ap": 0.829,
+  "xgb_auc": 0.5839,
+  "xgb_ap": 0.8279,
   "cox_train_cindex": 0.57,
-  "cox_test_cindex": 0.571
+  "cox_test_cindex": 0.571,
+  "ds_train_ci": 0.6304,
+  "ds_test_ci": 0.6214,
+  "ds_ibs": 0.1736,
+  "ds_ci_low": 0.6107,
+  "ds_ci_high": 0.6343,
+  "cox_train_ci": 0.6135,
+  "cox_test_ci": 0.6258,
+  "improvement": -0.0045
 }
