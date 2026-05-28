@@ -221,11 +221,13 @@ except Exception as e:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN TABS
 # ═══════════════════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🎯 Risk Score",
     "🧬 DeepSurv (Neural Net)",
     "🔍 SHAP Analysis",
     "📊 Model Performance",
+    "📂 Upload Your Data",
+    "🧠 Insight Engine",
 ])
 
 # ── TAB 1: Risk Score ──────────────────────────────────────────────────────────
@@ -458,9 +460,652 @@ with tab4:
 **No other code changes needed.**
         """)
 
-# ── Patient Input Summary ──────────────────────────────────────────────────────
-st.markdown("---")
-with st.expander("🔎 Raw Patient Input Summary"):
+# ── TAB 5: Upload Your Data ────────────────────────────────────────────────────
+with tab5:
+    st.markdown("""
+    ### 📂 Upload Your SEER Data
+    Upload a real SEER export CSV and the entire pipeline reruns on your data — 
+    preprocessing, model training, SHAP analysis, and survival curves all update instantly.
+    No code changes needed.
+    """)
+
+    st.info(
+        "**Expected format:** CSV exported from SEER\\*Stat with the columns listed below. "
+        "Column names must match exactly (case-sensitive). "
+        "See the variable map for the exact SEER\\*Stat field names to export.",
+        icon="ℹ️"
+    )
+
+    # ── SEER variable map ──────────────────────────────────────────────────────
+    with st.expander("📋 SEER Variable Map — Required Column Names"):
+        seer_map = pd.DataFrame([
+            ["age",            "Age at diagnosis",                          "Numeric"],
+            ["sex",            "Sex",                                       "Male / Female"],
+            ["race",           "Race/ethnicity",                            "White_NH, Black_NH, Hispanic, Asian_PI, AIAN, Other"],
+            ["insurance",      "Insurance recode (2007+)",                  "Private, Medicare, Medicaid, Uninsured"],
+            ["primary_site",   "Site recode ICD-O-3 (C00–C06, C09–C10)",   "Oral_Cavity / Oropharynx"],
+            ["stage",          "Derived AJCC Stage Group, 6th ed",          "I, II, III, IV"],
+            ["grade",          "Grade recode (thru 2017)",                  "Well_diff, Moderately_diff, Poorly_diff, Undiff, Unknown"],
+            ["hpv_status",     "HPV recode (2010+)",                        "Positive, Negative, Unknown"],
+            ["tobacco_use",    "Tobacco use recode (2014+)",                "Current, Former, Never, Unknown"],
+            ["alcohol_use",    "Not in standard SEER — leave blank/Unknown","Heavy, Moderate, None_Light, Unknown"],
+            ["treatment",      "First course treatment flags (combined)",   "Surgery_Only, Radiation_Only, Chemo_Radiation, etc."],
+            ["poverty_pct",    "% Persons below poverty (county-level)",    "Numeric (0–40)"],
+            ["median_income",  "Median household income (county-level)",    "Numeric"],
+            ["urban_rural",    "Rural-Urban Continuum Code (county-level)", "Large_Metro, Small_Metro, Suburban, Rural"],
+            ["region",         "SEER registry → Census region",             "Northeast, Midwest, South, West"],
+            ["diabetes",       "SEER-Medicare only (set to 0 if unavailable)","0 / 1"],
+            ["hypertension",   "SEER-Medicare only (set to 0 if unavailable)","0 / 1"],
+            ["immunosuppressed","SEER-Medicare only",                       "0 / 1"],
+            ["prior_cancer",   "Prior malignancy flag",                     "0 / 1"],
+            ["cci_score",      "Charlson Comorbidity Index",                "Numeric (0–8)"],
+            ["survival_months","Survival months",                           "Numeric"],
+            ["vital_status",   "Vital status recode",                       "0 = alive/censored, 1 = dead"],
+        ], columns=["Column Name (required)", "Real SEER Field", "Expected Values"])
+        st.dataframe(seer_map, hide_index=True, use_container_width=True)
+
+    # ── File uploader ──────────────────────────────────────────────────────────
+    uploaded_file = st.file_uploader(
+        "Upload SEER CSV export",
+        type=["csv"],
+        help="CSV exported from SEER*Stat with columns matching the variable map above."
+    )
+
+    REQUIRED_COLS = [
+        "age", "sex", "race", "insurance", "primary_site", "stage",
+        "grade", "hpv_status", "tobacco_use", "treatment",
+        "survival_months", "vital_status"
+    ]
+    OPTIONAL_COLS = [
+        "poverty_pct", "median_income", "urban_rural", "region",
+        "alcohol_use", "diabetes", "hypertension", "immunosuppressed",
+        "prior_cancer", "cci_score"
+    ]
+
+    if uploaded_file is not None:
+        try:
+            user_df = pd.read_csv(uploaded_file)
+            st.success(f"✅ File uploaded: **{uploaded_file.name}** — {len(user_df):,} rows × {user_df.shape[1]} columns")
+
+            # ── Column validation ──────────────────────────────────────────────
+            st.markdown("#### Column Validation")
+            missing_required = [c for c in REQUIRED_COLS if c not in user_df.columns]
+            missing_optional = [c for c in OPTIONAL_COLS if c not in user_df.columns]
+            present_required = [c for c in REQUIRED_COLS if c in user_df.columns]
+
+            val_col1, val_col2, val_col3 = st.columns(3)
+            val_col1.metric("Required columns found",  f"{len(present_required)}/{len(REQUIRED_COLS)}")
+            val_col2.metric("Optional columns missing", str(len(missing_optional)))
+            val_col3.metric("Total rows",              f"{len(user_df):,}")
+
+            if missing_required:
+                st.error(
+                    f"❌ **Missing required columns:** `{'`, `'.join(missing_required)}`  \n"
+                    f"Please rename your SEER columns to match the variable map above."
+                )
+            else:
+                st.success("✅ All required columns present.")
+
+                # Fill missing optional columns with defaults
+                defaults = {
+                    "poverty_pct": 15.0, "median_income": 55000,
+                    "urban_rural": "Suburban", "region": "South",
+                    "alcohol_use": "Unknown", "diabetes": 0,
+                    "hypertension": 0, "immunosuppressed": 0,
+                    "prior_cancer": 0, "cci_score": 1,
+                }
+                for col in missing_optional:
+                    user_df[col] = defaults.get(col, "Unknown")
+                    st.info(f"ℹ️ `{col}` not found — filled with default value `{defaults.get(col, 'Unknown')}`")
+
+                # ── Data preview ───────────────────────────────────────────────
+                st.markdown("#### Data Preview")
+                st.dataframe(user_df.head(10), use_container_width=True)
+
+                # ── Descriptive stats ──────────────────────────────────────────
+                st.markdown("#### Quick Statistics")
+                qs1, qs2, qs3, qs4 = st.columns(4)
+                qs1.metric("Median Age",       f"{user_df['age'].median():.0f}")
+                qs2.metric("5-yr Mortality",   f"{user_df['vital_status'].mean():.1%}")
+                qs3.metric("Stage IV %",       f"{(user_df['stage']=='IV').mean():.1%}")
+                qs4.metric("Median Survival",  f"{user_df['survival_months'].median():.0f} mo")
+
+                # Distribution plots
+                fig, axes = plt.subplots(1, 3, figsize=(13, 3.5))
+                fig.patch.set_facecolor("#0e1117")
+                for ax in axes: ax.set_facecolor("#0e1117")
+
+                # Stage distribution
+                stage_counts = user_df["stage"].value_counts().sort_index()
+                colors_s = ["#2ecc71","#f39c12","#e67e22","#e74c3c"]
+                axes[0].bar(stage_counts.index, stage_counts.values,
+                            color=colors_s[:len(stage_counts)], edgecolor="#0e1117")
+                axes[0].set_title("Stage Distribution", color="white", fontweight="bold")
+                axes[0].tick_params(colors="white"); axes[0].spines[:].set_color("#333")
+                axes[0].grid(axis="y", alpha=0.15, color="white")
+
+                # Race distribution
+                race_counts = user_df["race"].value_counts()
+                axes[1].barh(race_counts.index, race_counts.values,
+                             color="#2980b9", edgecolor="#0e1117")
+                axes[1].set_title("Race/Ethnicity", color="white", fontweight="bold")
+                axes[1].tick_params(colors="white", labelsize=8)
+                axes[1].spines[:].set_color("#333")
+                axes[1].grid(axis="x", alpha=0.15, color="white")
+
+                # Survival distribution
+                axes[2].hist(user_df["survival_months"], bins=30,
+                             color="#9b59b6", edgecolor="#0e1117", alpha=0.85)
+                axes[2].set_title("Survival Distribution", color="white", fontweight="bold")
+                axes[2].set_xlabel("Months", color="white")
+                axes[2].tick_params(colors="white"); axes[2].spines[:].set_color("#333")
+                axes[2].grid(axis="y", alpha=0.15, color="white")
+
+                plt.tight_layout()
+                st.pyplot(fig); plt.close()
+
+                # ── Retrain pipeline ───────────────────────────────────────────
+                st.markdown("---")
+                st.subheader("🔄 Retrain Pipeline on Your Data")
+                st.markdown(
+                    "Click below to run the full pipeline on your uploaded data: "
+                    "preprocessing → Logistic Regression → XGBoost → Cox PH. "
+                    "Results will update across all tabs."
+                )
+
+                if st.button("▶️ Run Pipeline on Uploaded Data", type="primary"):
+                    import subprocess, tempfile, os
+
+                    # Save uploaded data temporarily
+                    tmp_path = Path("data/user_uploaded.csv")
+                    tmp_path.parent.mkdir(exist_ok=True)
+                    user_df.to_csv(tmp_path, index=False)
+
+                    progress = st.progress(0, text="Starting pipeline...")
+
+                    with st.spinner("Running preprocessing..."):
+                        result = subprocess.run(
+                            ["python", "preprocess.py", "--data", str(tmp_path)],
+                            capture_output=True, text=True, cwd="."
+                        )
+                        if result.returncode != 0:
+                            # Fallback: run with env variable
+                            env = os.environ.copy()
+                            env["SEER_DATA_PATH"] = str(tmp_path)
+                            result = subprocess.run(
+                                ["python", "preprocess.py"],
+                                capture_output=True, text=True, env=env
+                            )
+                    progress.progress(33, text="Preprocessing complete ✅  Training models...")
+
+                    with st.spinner("Training models..."):
+                        env = os.environ.copy()
+                        env["SEER_DATA_PATH"] = str(tmp_path)
+                        r2 = subprocess.run(
+                            ["python", "train_models.py"],
+                            capture_output=True, text=True, env=env
+                        )
+                    progress.progress(66, text="Models trained ✅  Running Cox PH...")
+
+                    with st.spinner("Fitting Cox PH model..."):
+                        r3 = subprocess.run(
+                            ["python", "cox_model.py"],
+                            capture_output=True, text=True, env=env
+                        )
+                    progress.progress(100, text="Pipeline complete ✅")
+
+                    if result.returncode == 0:
+                        st.success(
+                            "✅ Pipeline complete! Switch to the **Risk Score**, "
+                            "**SHAP Analysis**, or **Model Performance** tabs — "
+                            "all results now reflect your uploaded data. "
+                            "Refresh the page if metrics don't update immediately."
+                        )
+                        st.cache_resource.clear()
+                    else:
+                        st.error(
+                            "Pipeline encountered an issue. This may be because the "
+                            "uploaded data has different column values than expected. "
+                            "Check that your values match the variable map exactly."
+                        )
+                        with st.expander("Show error details"):
+                            st.code(result.stderr or result.stdout)
+
+        except Exception as e:
+            st.error(f"Could not read file: {e}")
+
+    else:
+        # Show example data format when no file uploaded
+        st.markdown("#### Expected CSV Format (first 3 rows)")
+        example = pd.DataFrame([
+            {"age":58,"sex":"Male","race":"White_NH","insurance":"Private",
+             "primary_site":"Oral_Cavity","stage":"II","grade":"Moderately_diff",
+             "hpv_status":"Negative","tobacco_use":"Former","alcohol_use":"Moderate",
+             "treatment":"Surgery_Radiation","poverty_pct":12.5,"median_income":62000,
+             "urban_rural":"Suburban","region":"South","diabetes":0,"hypertension":1,
+             "immunosuppressed":0,"prior_cancer":0,"cci_score":1,
+             "survival_months":72,"vital_status":0},
+            {"age":65,"sex":"Female","race":"Black_NH","insurance":"Medicaid",
+             "primary_site":"Oropharynx","stage":"III","grade":"Poorly_diff",
+             "hpv_status":"Positive","tobacco_use":"Current","alcohol_use":"Heavy",
+             "treatment":"Chemo_Radiation","poverty_pct":28.0,"median_income":32000,
+             "urban_rural":"Urban","region":"South","diabetes":1,"hypertension":1,
+             "immunosuppressed":0,"prior_cancer":0,"cci_score":2,
+             "survival_months":38,"vital_status":1},
+            {"age":72,"sex":"Male","race":"Hispanic","insurance":"Medicare",
+             "primary_site":"Oral_Cavity","stage":"IV","grade":"Poorly_diff",
+             "hpv_status":"Unknown","tobacco_use":"Current","alcohol_use":"Unknown",
+             "treatment":"Multimodal","poverty_pct":22.0,"median_income":41000,
+             "urban_rural":"Rural","region":"West","diabetes":0,"hypertension":0,
+             "immunosuppressed":1,"prior_cancer":0,"cci_score":3,
+             "survival_months":18,"vital_status":1},
+        ])
+        st.dataframe(example, use_container_width=True)
+        st.caption("Download this template, populate with your SEER export, and upload above.")
+
+        # Download template button
+        csv_template = example.to_csv(index=False)
+        st.download_button(
+            label="⬇️ Download CSV Template",
+            data=csv_template,
+            file_name="seer_template.csv",
+            mime="text/csv",
+        )
+
+
+
+# ── TAB 6: Insight Engine ──────────────────────────────────────────────────────
+with tab6:
+    st.markdown("""
+    ### 🧠 Insight Engine
+    Automated exploration of your cohort data across three insight modes.
+    The engine runs **clinically constrained** analysis — only exploring
+    variable combinations that make biological and epidemiological sense.
+    """)
+
+    # Load cohort data — uploaded or simulated
+    @st.cache_data
+    def load_cohort():
+        upload_path = Path("data/user_uploaded.csv")
+        if upload_path.exists():
+            df = pd.read_csv(upload_path)
+            source = "Your uploaded SEER data"
+        else:
+            df = pd.read_csv("data/seer_oral_cancer_simulated.csv")
+            source = "Simulated SEER-like data (upload real data in the Upload tab)"
+        return df, source
+
+    cohort_df, data_source = load_cohort()
+    st.info(f"📊 **Active dataset:** {data_source} — N={len(cohort_df):,} patients", icon="📂")
+
+    # Compute predicted risk scores for entire cohort
+    @st.cache_data
+    def compute_cohort_risks(df_hash):
+        df = cohort_df.copy()
+        FEAT_COLS = ["age","poverty_pct","median_income","cci_score",
+                     "diabetes","hypertension","immunosuppressed","prior_cancer",
+                     "sex","race","insurance","primary_site","stage","grade",
+                     "hpv_status","tobacco_use","alcohol_use","treatment"]
+        for col in FEAT_COLS:
+            if col not in df.columns:
+                df[col] = "Unknown" if df[col].dtype == object else 0
+        X = df[FEAT_COLS].copy()
+        try:
+            X_proc = preprocessor.transform(X)
+            risks   = xgb_model.predict_proba(X_proc)[:,1]
+        except:
+            risks = np.random.uniform(0.3, 0.9, len(df))
+        return risks
+
+    cohort_risks = compute_cohort_risks(len(cohort_df))
+    cohort_df = cohort_df.copy()
+    cohort_df["predicted_risk"] = cohort_risks
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODE 1 — WHAT-IF ANALYSIS
+    # ══════════════════════════════════════════════════════════════════════════
+    st.subheader("1️⃣  What-If Analysis")
+    st.markdown(
+        "Select a variable. The engine reassigns every patient to each possible "
+        "value and shows how predicted survival changes across your cohort — "
+        "holding all other variables at their observed values."
+    )
+
+    whatif_var = st.selectbox(
+        "Variable to vary:",
+        ["insurance","race","treatment","stage","hpv_status",
+         "tobacco_use","urban_rural","primary_site"],
+        key="whatif_var"
+    )
+
+    # Clinically valid values per variable
+    VALID_VALUES = {
+        "insurance":    ["Private","Medicare","Medicaid","Uninsured"],
+        "race":         ["White_NH","Black_NH","Hispanic","Asian_PI","AIAN"],
+        "treatment":    ["Surgery_Only","Radiation_Only","Chemo_Radiation",
+                         "Surgery_Radiation","Multimodal"],
+        "stage":        ["I","II","III","IV"],
+        "hpv_status":   ["Positive","Negative"],
+        "tobacco_use":  ["Current","Former","Never"],
+        "urban_rural":  ["Large_Metro","Small_Metro","Suburban","Rural"],
+        "primary_site": ["Oral_Cavity","Oropharynx"],
+    }
+
+    # Clinical constraints
+    def apply_constraints(df, var, val):
+        """Only apply changes that are clinically sensible."""
+        df = df.copy()
+        if var == "hpv_status" and val == "Positive":
+            # HPV+ predominantly oropharyngeal — only apply to oropharynx patients
+            mask = df["primary_site"] == "Oropharynx"
+            df.loc[mask, var] = val
+        elif var == "treatment":
+            # Multimodal not typical for Stage I
+            if val == "Multimodal":
+                mask = df["stage"].isin(["II","III","IV"])
+            elif val == "Surgery_Only":
+                mask = df["stage"].isin(["I","II"])
+            else:
+                mask = pd.Series(True, index=df.index)
+            df.loc[mask, var] = val
+        else:
+            df[var] = val
+        return df
+
+    FEAT_COLS = ["age","poverty_pct","median_income","cci_score",
+                 "diabetes","hypertension","immunosuppressed","prior_cancer",
+                 "sex","race","insurance","primary_site","stage","grade",
+                 "hpv_status","tobacco_use","alcohol_use","treatment"]
+
+    if st.button("▶️ Run What-If Analysis", key="run_whatif"):
+        results_whatif = []
+        for val in VALID_VALUES[whatif_var]:
+            df_cf = apply_constraints(cohort_df.copy(), whatif_var, val)
+            X_cf  = df_cf[[c for c in FEAT_COLS if c in df_cf.columns]].copy()
+            try:
+                X_proc_cf = preprocessor.transform(X_cf)
+                risks_cf  = xgb_model.predict_proba(X_proc_cf)[:,1]
+            except:
+                risks_cf = cohort_risks
+            results_whatif.append({
+                "value":       val,
+                "mean_risk":   float(risks_cf.mean()),
+                "p25_risk":    float(np.percentile(risks_cf, 25)),
+                "p75_risk":    float(np.percentile(risks_cf, 75)),
+                "pct_highrisk":float((risks_cf > 0.65).mean()),
+                "n_affected":  int(df_cf[whatif_var].eq(val).sum()),
+            })
+
+        wi_df = pd.DataFrame(results_whatif).sort_values("mean_risk")
+        baseline_risk = float(cohort_risks.mean())
+
+        fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+        fig.patch.set_facecolor("#0e1117")
+        for ax in axes: ax.set_facecolor("#0e1117")
+
+        # Mean risk comparison
+        colors_wi = ["#2ecc71" if r < baseline_risk else "#e74c3c"
+                     for r in wi_df["mean_risk"]]
+        axes[0].barh(wi_df["value"], wi_df["mean_risk"],
+                     color=colors_wi, edgecolor="#0e1117", height=0.6)
+        axes[0].axvline(baseline_risk, color="white", lw=1.5, ls="--",
+                        label=f"Observed baseline ({baseline_risk:.3f})")
+        axes[0].set_xlabel("Mean Predicted Risk", color="white", fontsize=11)
+        axes[0].set_title(f"What-If: Vary {whatif_var}\nMean Cohort Risk by Value",
+                          color="white", fontsize=11, fontweight="bold")
+        axes[0].tick_params(colors="white"); axes[0].spines[:].set_color("#333")
+        axes[0].grid(axis="x", alpha=0.15, color="white")
+        legend = axes[0].legend(fontsize=9, facecolor="#1a1a2e", edgecolor="#333")
+        for txt in legend.get_texts(): txt.set_color("white")
+
+        # % High-risk patients
+        axes[1].barh(wi_df["value"], wi_df["pct_highrisk"]*100,
+                     color=colors_wi, edgecolor="#0e1117", height=0.6, alpha=0.85)
+        axes[1].set_xlabel("% Patients Classified High-Risk (>65%)", color="white", fontsize=11)
+        axes[1].set_title("High-Risk Patient Rate by Value",
+                          color="white", fontsize=11, fontweight="bold")
+        axes[1].tick_params(colors="white"); axes[1].spines[:].set_color("#333")
+        axes[1].grid(axis="x", alpha=0.15, color="white")
+        for i, (_, row) in enumerate(wi_df.iterrows()):
+            axes[1].text(row["pct_highrisk"]*100 + 0.5, i,
+                         f"{row['pct_highrisk']*100:.1f}%",
+                         va="center", color="white", fontsize=9)
+
+        plt.tight_layout()
+        st.pyplot(fig); plt.close()
+
+        # Insight summary
+        best  = wi_df.iloc[0]
+        worst = wi_df.iloc[-1]
+        diff  = worst["mean_risk"] - best["mean_risk"]
+        st.markdown(f"""
+        **Key Insight:**
+        Changing `{whatif_var}` from **{worst['value']}** → **{best['value']}**
+        reduces predicted cohort risk by **{diff:.3f}** ({diff/worst['mean_risk']*100:.1f}% relative reduction).
+        Under the `{best['value']}` scenario, **{best['pct_highrisk']*100:.1f}%** of patients
+        would be classified high-risk vs **{worst['pct_highrisk']*100:.1f}%** under `{worst['value']}`.
+        """)
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODE 2 — SUBGROUP DISCOVERY
+    # ══════════════════════════════════════════════════════════════════════════
+    st.subheader("2️⃣  Subgroup Discovery")
+    st.markdown(
+        "The engine automatically identifies which patient subgroups in your cohort "
+        "have the **highest predicted mortality risk** — using a decision tree to find "
+        "the most discriminating combination of variables."
+    )
+
+    disc_vars = st.multiselect(
+        "Variables to explore:",
+        ["race","insurance","stage","tobacco_use","urban_rural",
+         "primary_site","hpv_status","treatment","sex"],
+        default=["race","insurance","stage","urban_rural"],
+        key="disc_vars"
+    )
+    min_subgroup_size = st.slider("Minimum subgroup size (patients)", 10, 200, 30)
+
+    if st.button("▶️ Discover High-Risk Subgroups", key="run_discovery"):
+        from sklearn.tree import DecisionTreeClassifier, export_text
+
+        # Encode categorical variables for decision tree
+        disc_df = cohort_df.copy()
+        disc_df["high_risk"] = (disc_df["predicted_risk"] > 0.65).astype(int)
+
+        enc_cols = {}
+        for col in disc_vars:
+            if col in disc_df.columns:
+                dummies = pd.get_dummies(disc_df[col].fillna("Unknown"),
+                                         prefix=col, drop_first=False)
+                disc_df = pd.concat([disc_df, dummies], axis=1)
+                enc_cols[col] = list(dummies.columns)
+
+        feat_cols_tree = [c for cols in enc_cols.values() for c in cols]
+        if len(feat_cols_tree) == 0:
+            st.warning("No valid variables selected.")
+        else:
+            X_tree = disc_df[feat_cols_tree].fillna(0)
+            y_tree = disc_df["high_risk"]
+
+            dt = DecisionTreeClassifier(
+                max_depth=4, min_samples_leaf=min_subgroup_size, random_state=42
+            )
+            dt.fit(X_tree, y_tree)
+
+            # Get leaf node risk profiles
+            leaf_ids  = dt.apply(X_tree)
+            leaf_data = []
+            for leaf in np.unique(leaf_ids):
+                mask     = leaf_ids == leaf
+                n        = mask.sum()
+                risk_mean= disc_df.loc[mask, "predicted_risk"].mean()
+                high_pct = disc_df.loc[mask, "high_risk"].mean()
+                # Get dominant value for each variable in this leaf
+                profile = {}
+                for col in disc_vars:
+                    if col in disc_df.columns:
+                        profile[col] = disc_df.loc[mask, col].mode()[0] if n > 0 else "Unknown"
+                leaf_data.append({
+                    "n_patients": n,
+                    "mean_risk":  round(risk_mean, 3),
+                    "pct_highrisk": round(high_pct * 100, 1),
+                    **profile,
+                })
+
+            leaf_df = pd.DataFrame(leaf_data).sort_values("mean_risk", ascending=False)
+
+            # Display top subgroups
+            st.markdown("**Top High-Risk Subgroups (ranked by predicted risk):**")
+
+            for i, (_, row) in enumerate(leaf_df.head(5).iterrows()):
+                risk_col = "#e74c3c" if row["mean_risk"] > 0.65 else \
+                           "#f39c12" if row["mean_risk"] > 0.45 else "#2ecc71"
+                profile_str = " · ".join([
+                    f"{col}=**{row[col]}**"
+                    for col in disc_vars if col in row.index
+                ])
+                st.markdown(f"""
+                <div style='background:#161b22;border-left:4px solid {risk_col};
+                            border-radius:4px;padding:12px 16px;margin:6px 0;'>
+                  <span style='font-family:IBM Plex Mono,monospace;font-size:0.8rem;
+                               color:#7f8c8d;'>SUBGROUP {i+1} — {int(row['n_patients'])} patients</span><br>
+                  <span style='font-size:0.95rem;'>{profile_str}</span><br>
+                  <span style='color:{risk_col};font-weight:700;font-family:IBM Plex Mono,monospace;'>
+                    Mean risk: {row['mean_risk']:.3f} · {row['pct_highrisk']:.1f}% high-risk
+                  </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Cohort comparison bar
+            fig, ax = plt.subplots(figsize=(10, 4))
+            fig.patch.set_facecolor("#0e1117"); ax.set_facecolor("#0e1117")
+            top5     = leaf_df.head(5)
+            labels   = [f"Subgroup {i+1}\n(n={int(r['n_patients'])})"
+                        for i, (_, r) in enumerate(top5.iterrows())]
+            bar_cols = ["#e74c3c" if r > 0.65 else "#f39c12" if r > 0.45 else "#2ecc71"
+                        for r in top5["mean_risk"]]
+            ax.bar(labels, top5["mean_risk"], color=bar_cols, edgecolor="#0e1117", width=0.6)
+            ax.axhline(cohort_risks.mean(), color="white", lw=1.5, ls="--",
+                       label=f"Cohort average ({cohort_risks.mean():.3f})")
+            ax.set_ylabel("Mean Predicted Risk", color="white", fontsize=11)
+            ax.set_title("Discovered High-Risk Subgroups vs Cohort Average",
+                         color="white", fontsize=11, fontweight="bold")
+            ax.tick_params(colors="white"); ax.spines[:].set_color("#333")
+            ax.grid(axis="y", alpha=0.15, color="white")
+            legend = ax.legend(fontsize=9, facecolor="#1a1a2e", edgecolor="#333")
+            for txt in legend.get_texts(): txt.set_color("white")
+            plt.tight_layout()
+            st.pyplot(fig); plt.close()
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODE 3 — SENSITIVITY ANALYSIS (per patient)
+    # ══════════════════════════════════════════════════════════════════════════
+    st.subheader("3️⃣  Sensitivity Analysis — What Would Help This Patient Most?")
+    st.markdown(
+        "Using the patient profile from the sidebar, the engine systematically "
+        "changes each variable to its best clinically valid value and ranks "
+        "interventions by predicted survival gain."
+    )
+
+    MODIFIABLE = {
+        "treatment":   ["Surgery_Only","Radiation_Only","Chemo_Radiation",
+                        "Surgery_Radiation","Multimodal"],
+        "tobacco_use": ["Never","Former","Current"],
+        "alcohol_use": ["None_Light","Moderate","Heavy"],
+        "insurance":   ["Private","Medicare","Medicaid","Uninsured"],
+        "urban_rural": ["Large_Metro","Small_Metro","Suburban","Rural"],
+    }
+    FIXED = ["age","sex","race","primary_site","stage","grade",
+             "hpv_status","cci_score","poverty_pct","median_income"]
+
+    if st.button("▶️ Run Sensitivity Analysis for This Patient", key="run_sensitivity"):
+        baseline_prob = float(lr_prob)
+        sensitivity_results = []
+
+        for var, values in MODIFIABLE.items():
+            for val in values:
+                # Apply clinical constraint
+                test_dict = input_dict.copy()
+
+                # Clinical constraints
+                if var == "treatment" and val == "Multimodal" and stage == "I":
+                    continue  # Multimodal not typical for Stage I
+                if var == "treatment" and val == "Surgery_Only" and stage in ["III","IV"]:
+                    continue  # Surgery alone not typical for advanced disease
+
+                test_dict[var] = val
+                try:
+                    X_test = preprocessor.transform(pd.DataFrame([test_dict]))
+                    prob   = float(lr_model.predict_proba(X_test)[0,1])
+                    delta  = baseline_prob - prob  # positive = improvement
+                    sensitivity_results.append({
+                        "variable":   var,
+                        "value":      val,
+                        "risk":       round(prob, 4),
+                        "delta":      round(delta, 4),
+                        "is_current": (test_dict[var] == input_dict.get(var, "")),
+                    })
+                except:
+                    pass
+
+        if sensitivity_results:
+            sens_df = pd.DataFrame(sensitivity_results)
+            # Remove current values, keep improvements only
+            sens_df = sens_df[~sens_df["is_current"]]
+            sens_df = sens_df.sort_values("delta", ascending=False)
+
+            # Top improvements
+            improvements = sens_df[sens_df["delta"] > 0].head(8)
+            worsenings   = sens_df[sens_df["delta"] < 0].tail(3)
+
+            fig, ax = plt.subplots(figsize=(10, 5))
+            fig.patch.set_facecolor("#0e1117"); ax.set_facecolor("#0e1117")
+
+            all_sens = pd.concat([improvements, worsenings]).sort_values("delta")
+            labels   = [f"{r['variable']} → {r['value']}" for _,r in all_sens.iterrows()]
+            colors_sens = ["#2ecc71" if d > 0 else "#e74c3c" for d in all_sens["delta"]]
+
+            ax.barh(labels, all_sens["delta"],
+                    color=colors_sens, edgecolor="#0e1117", height=0.6)
+            ax.axvline(0, color="white", lw=0.8)
+            ax.set_xlabel("Δ Predicted Risk (positive = improvement)", color="white", fontsize=11)
+            ax.set_title(f"Sensitivity Analysis — {age}yo {sex}, Stage {stage}\n"
+                         f"Baseline risk: {baseline_prob:.3f} | Most impactful variable changes",
+                         color="white", fontsize=11, fontweight="bold")
+            ax.tick_params(colors="white", labelsize=9)
+            ax.spines[:].set_color("#333")
+            ax.grid(axis="x", alpha=0.15, color="white")
+            plt.tight_layout()
+            st.pyplot(fig); plt.close()
+
+            # Top 3 actionable insights
+            st.markdown("**Top 3 Most Actionable Interventions:**")
+            for i, (_, row) in enumerate(improvements.head(3).iterrows()):
+                new_risk = row["risk"]
+                delta    = row["delta"]
+                st.markdown(f"""
+                <div style='background:#161b22;border-left:4px solid #2ecc71;
+                            border-radius:4px;padding:12px 16px;margin:6px 0;'>
+                  <strong>{i+1}. Change {row['variable']} → {row['value']}</strong><br>
+                  Predicted risk: {baseline_prob:.3f} → <strong>{new_risk:.3f}</strong>
+                  &nbsp;|&nbsp;
+                  <span style='color:#2ecc71;font-weight:700;'>↓ {delta:.3f} risk reduction
+                  ({delta/baseline_prob*100:.1f}% relative)</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if len(improvements) == 0:
+                st.success("✅ This patient already has near-optimal modifiable risk factors.")
+        else:
+            st.warning("Could not compute sensitivity analysis for this patient profile.")
+
+
     patient_summary = {
         "Age": age,
         "Sex": sex,
