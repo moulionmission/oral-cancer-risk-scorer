@@ -458,6 +458,45 @@ with tab4:
 **No other code changes needed.**
         """)
 
+# ── Patient Input Summary ──────────────────────────────────────────────────────
+st.markdown("---")
+with st.expander("🔎 Raw Patient Input Summary"):
+    patient_summary = {
+        "Age": age,
+        "Sex": sex,
+        "Race/Ethnicity": race,
+        "County Median Income ($)": f"${income:,}",
+        "County Poverty Rate (%)": f"{poverty}%",
+        "Insurance": insurance,
+        "Urban/Rural": urban,
+        "Region": region,
+        "Primary Site": site,
+        "Stage": stage,
+        "Grade": grade,
+        "HPV Status": hpv,
+        "Treatment": treatment,
+        "Tobacco Use": tobacco,
+        "Alcohol Use": alcohol,
+        "Diabetes": "Yes" if diabetes else "No",
+        "Hypertension": "Yes" if htn else "No",
+        "Immunosuppressed": "Yes" if immuno else "No",
+        "Prior Cancer": "Yes" if prior_ca else "No",
+        "Charlson Comorbidity Index": cci,
+    }
+    col_inp1, col_inp2 = st.columns(2)
+    items = list(patient_summary.items())
+    half  = len(items) // 2
+    with col_inp1:
+        st.dataframe(
+            pd.DataFrame(items[:half], columns=["Field","Value"]),
+            hide_index=True, use_container_width=True
+        )
+    with col_inp2:
+        st.dataframe(
+            pd.DataFrame(items[half:], columns=["Field","Value"]),
+            hide_index=True, use_container_width=True
+        )
+
 # ── Footer ─────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
